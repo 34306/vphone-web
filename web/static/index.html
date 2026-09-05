@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>vphone — dashboard</title>
+  <link rel="stylesheet" href="/static/style.css?v=20260625a" />
+</head>
+<body>
+  <div class="topbar" id="topbar"></div>
+  <div class="main-content">
+    <div class="container">
+      <h1>My Devices</h1>
+      <div id="vms" class="grid"></div>
+      <p id="empty" class="muted" style="display:none; text-align:center; padding:40px 0;">No devices assigned. Ask an admin to assign one.</p>
+    </div>
+  </div>
+
+  <script src="/static/app.js?v=20260625a"></script>
+  <script>
+    let me;
+    async function refresh() {
+      const { vms } = await api("/api/vms");
+      const wrap = document.getElementById("vms");
+      document.getElementById("empty").style.display = vms.length ? "none" : "block";
+      wrap.innerHTML = "";
+      for (const vm of vms) {
+        const card = document.createElement("div");
+        card.className = "card";
+        const running = vm.status === "running";
+        const canStart = !!(me && me.can_start);
+        const canStop = !!(me && me.can_stop);
+        let powerButtons = "";
+        if (canStart) powerButtons += `<button data-act="start" ${running ? "disabled" : ""}>▶ Start</button>`;
+        if (canStop) powerButtons += `<button data-act="stop" class="danger" ${running ? "" : "disabled"}>■ Stop</button>`;
+        const openHint = (!running && !canStart)
+          ? `<span class="muted" style="font-size:11px">Waiting for admin to power on</span>`
+          : "";
+        card.innerHTML = `
+          <div class="row" style="justify-content:space-between; margin-bottom:10px">
+            <strong style="font-size:14px">${vm.name}</strong>
+            <span class="status ${vm.status}">${vm.status}</span>
+          </div>
+          <div class="muted mono" style="font-size:11px">iOS ${vm.ios_version || "26.1"} · ${vm.cpu} CPU · ${vm.mem_mb} MB RAM</div>
+          <div class="row" style="margin-top:14px">
+            ${powerButtons}
+            <a class="btn primary" href="/vm?id=${vm.id}" ${running ? "" : 'style="pointer-events:none;opacity:.35"'}>Open →</a>
+            ${openHint}
+          </div>`;
+        const startBtn = card.querySelector('[data-act="start"]');
+        const stopBtn = card.querySelector('[data-act="stop"]');
+        if (startBtn) startBtn.onclick = () => act(vm.id, "start", card);
+        if (stopBtn) stopBtn.onclick = () => act(vm.id, "stop", card);
+        wrap.appendChild(card);
+      }
+    }
+    async function act(id, what, card) {
+      card.querySelectorAll("button").forEach((b) => (b.disabled = true));
+      try {
+        await apiJSON(`/api/vms/${id}/${what}`, "POST", {});
+      } catch (e) {
+        alert(e.message);
+      }
+      await refresh();
+    }
+    (async () => {
+      me = await loadMe();
+      buildShell(me);
+      await refresh();
+      setInterval(refresh, 5000);
+    })();
+  </script>
+</body>
+</html>

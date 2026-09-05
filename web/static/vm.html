@@ -1,0 +1,1081 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>vphone — device</title>
+  <link rel="stylesheet" href="/static/style.css?v=20260725b" />
+  <link rel="stylesheet" href="/static/vendor/xterm.css" />
+  <style>
+    /* SSH terminal tab (xterm.js) */
+    #panelSsh { display:flex; flex-direction:column; min-height:0; height:100%; padding:0; }
+    .ssh-titlebar { display:flex; align-items:center; gap:6px; padding:5px 8px;
+      background:#161616; border:1px solid var(--border,#333); border-bottom:none;
+      border-radius:6px 6px 0 0; font-family:var(--font-mono,monospace); }
+    .ssh-dot { width:10px; height:10px; border-radius:50%; display:inline-block; flex:0 0 auto; }
+    .ssh-dot.red{background:#ff5f56} .ssh-dot.amber{background:#ffbd2e} .ssh-dot.green{background:#27c93f}
+    .ssh-tabs { display:flex; align-items:center; gap:4px; flex:1; min-width:0;
+      overflow-x:auto; margin-left:4px; scrollbar-width:thin; }
+    .ssh-tabs::-webkit-scrollbar { height:0; }
+    .ssh-tab { display:flex; align-items:center; gap:6px; flex:0 0 auto;
+      padding:3px 8px; font-size:11px; color:var(--muted,#888); cursor:pointer;
+      background:#0f0f0f; border:1px solid var(--border,#333); border-radius:5px; max-width:150px; }
+    .ssh-tab .ssh-tab-name { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .ssh-tab .ssh-tab-dot { width:6px; height:6px; border-radius:50%; flex:0 0 auto; background:#555; }
+    .ssh-tab .ssh-tab-dot.up { background:var(--green,#4caf50); }
+    .ssh-tab .ssh-tab-dot.down { background:var(--red,#e5534b); }
+    .ssh-tab.active { color:#e8e8e8; background:#0a0a0a; border-color:#4a4a4a; }
+    .ssh-tab .ssh-tab-x { color:#666; font-size:13px; line-height:1; padding:0 1px; }
+    .ssh-tab .ssh-tab-x:hover { color:var(--red,#e5534b); }
+    .ssh-addtab { flex:0 0 auto; width:22px; height:22px; display:flex; align-items:center;
+      justify-content:center; background:transparent; border:1px solid var(--border,#333);
+      color:var(--muted,#888); font-size:15px; line-height:1; border-radius:5px;
+      cursor:pointer; font-family:var(--font-mono,monospace); padding:0; }
+    .ssh-addtab:hover:not(:disabled) { color:#ddd; border-color:#555; }
+    .ssh-addtab:disabled { opacity:.35; cursor:not-allowed; }
+    .ssh-area { flex:1; min-height:340px; max-height:74vh; position:relative;
+      background:#0a0a0a; border:1px solid var(--border,#333); border-radius:0 0 6px 6px;
+      overflow:hidden; }
+    .ssh-xterm { position:absolute; inset:0; padding:6px 4px 6px 8px; }
+    .ssh-xterm .xterm, .ssh-xterm .xterm-viewport { background:transparent !important; }
+    .ssh-xterm .xterm-viewport::-webkit-scrollbar { width:8px; }
+    .ssh-xterm .xterm-viewport::-webkit-scrollbar-thumb { background:#333; border-radius:4px; }
+
+    /* Files (Filza-style) tab */
+    #panelFiles { display:flex; flex-direction:column; min-height:0; height:100%; padding:0; }
+    .fz-bar { display:flex; gap:5px; align-items:center; padding:6px 8px; background:#161616;
+      border:1px solid var(--border,#333); border-bottom:none; border-radius:6px 6px 0 0; }
+    .fz-bar button { flex:0 0 auto; background:transparent; border:1px solid var(--border,#333);
+      color:var(--muted,#aaa); font-size:12px; padding:3px 9px; border-radius:5px; cursor:pointer;
+      font-family:var(--font-mono,monospace); }
+    .fz-bar button:hover { color:#eee; border-color:#555; }
+    .fz-path { flex:1; min-width:0; background:#0d0d0d; border:1px solid var(--border,#333);
+      color:#e0e0e0; font-family:var(--font-mono,monospace); font-size:12px; padding:4px 8px; border-radius:5px; outline:none; }
+    .fz-crumbs { padding:4px 10px; font-size:11px; color:var(--muted,#888); background:#111;
+      border-left:1px solid var(--border,#333); border-right:1px solid var(--border,#333);
+      white-space:nowrap; overflow-x:auto; }
+    .fz-crumbs span.seg { cursor:pointer; color:var(--blue,#61afef); }
+    .fz-crumbs span.seg:hover { text-decoration:underline; }
+    .fz-crumbs .sep { color:#555; }
+    .fz-list { flex:1; min-height:300px; max-height:66vh; overflow:auto; background:#0a0a0a;
+      border:1px solid var(--border,#333); border-radius:0 0 6px 6px; font-family:var(--font-mono,monospace); font-size:12px; }
+    .fz-row { display:flex; align-items:center; gap:8px; padding:5px 10px; border-bottom:1px solid #181818; }
+    .fz-row:hover { background:#141414; }
+    .fz-row .fz-ic { flex:0 0 auto; width:16px; text-align:center; }
+    .fz-row .fz-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#e0e0e0; }
+    .fz-row.dir .fz-name { color:var(--blue,#61afef); cursor:pointer; }
+    .fz-row.dir .fz-name:hover { text-decoration:underline; }
+    .fz-row .fz-meta { flex:0 0 auto; color:var(--muted,#777); font-size:10px; }
+    .fz-row .fz-dl { flex:0 0 auto; background:transparent; border:1px solid var(--border,#333);
+      color:var(--muted,#999); font-size:10px; padding:1px 7px; border-radius:4px; cursor:pointer; }
+    .fz-row .fz-dl:hover { color:#eee; border-color:#666; }
+    .fz-status { padding:4px 10px; font-size:10px; color:var(--muted,#777); }
+    .fz-status.err { color:var(--red,#e5534b); }
+  </style>
+</head>
+<body>
+  <div class="topbar" id="topbar"></div>
+  <div class="main-content" style="overflow:hidden">
+    <div style="padding:12px; height:100%;">
+      <div class="vm-stage" id="vmStage">
+        <!-- Phone: auto-scales to fill viewport height, never hidden -->
+        <div class="phone-wrapper">
+          <div class="phone-frame">
+            <video id="screen" autoplay playsinline muted></video>
+            <canvas id="canvas" style="width:100%;height:100%;object-fit:contain;display:none;background:#000"></canvas>
+            <div class="touch-layer" id="touch" tabindex="0"></div>
+          </div>
+        </div>
+
+        <!-- Debug sidebar: fills remaining width, scrolls internally -->
+        <div class="debug-sidebar" id="sidebar">
+          <div class="debug-tabs">
+            <button class="debug-tab active" data-tab="controls">Controls</button>
+            <button class="debug-tab" data-tab="apps">Apps</button>
+            <button class="debug-tab" data-tab="logs">Logs</button>
+            <button class="debug-tab" data-tab="crashes">Crashes</button>
+            <button class="debug-tab" data-tab="network">Network</button>
+            <button class="debug-tab" data-tab="system">System</button>
+            <button class="debug-tab" data-tab="console">Console</button>
+            <button class="debug-tab" data-tab="ssh">SSH</button>
+            <button class="debug-tab" data-tab="files">Files</button>
+          </div>
+
+          <!-- tab: controls -->
+          <div class="debug-panel" id="panelControls">
+            <div class="group">
+              <div class="muted" style="font-size:11px; margin-bottom:8px">Hardware Keys</div>
+              <div class="row">
+                <button data-key="home">⌂ Home</button>
+                <button data-key="power">⏻ Power</button>
+              </div>
+              <div class="row" style="margin-top:6px">
+                <button data-key="volup">🔊 Vol +</button>
+                <button data-key="voldown">🔉 Vol −</button>
+              </div>
+            </div>
+            <div class="group">
+              <div class="muted" style="font-size:11px; margin-bottom:8px">Keyboard Input</div>
+              <div class="muted" style="font-size:10px; margin-bottom:6px">
+                Click phone screen and type directly, or use this input:
+              </div>
+              <div class="kbd-input-area">
+                <input id="kbdInput" type="text" autocapitalize="off" autocomplete="off"
+                       autocorrect="off" spellcheck="false"
+                       placeholder="Type or paste here…" />
+                <button id="pasteBtn" title="Paste clipboard → VM">📋 Paste→VM</button>
+                <button id="copyFromVm" title="Copy text from VM clipboard">📱 VM→Copy</button>
+              </div>
+            </div>
+            <div class="group">
+              <div class="muted" style="font-size:11px; margin-bottom:8px">Install App</div>
+              <div class="dropzone" id="drop">
+                Drop .ipa / .tipa<br />or click to choose
+              </div>
+              <input id="file" type="file" accept=".ipa,.tipa" style="display:none" />
+              <label class="muted" style="display:flex; gap:6px; align-items:center; margin-top:8px; font-size:11px">
+                <input type="checkbox" id="tsToggle" checked />
+                Install with TrollStore
+              </label>
+              <div class="progress" id="upbar"><i></i></div>
+              <div class="up-info" id="upinfo" style="display:none"></div>
+            </div>
+            <div class="group">
+              <div class="muted" style="font-size:11px; margin-bottom:6px">Connection</div>
+              <div id="conn" class="row mono" style="font-size:12px">connecting…</div>
+            </div>
+          </div>
+
+          <!-- tab: apps -->
+          <div class="debug-panel" id="panelApps" style="display:none">
+            <div id="appManager"></div>
+          </div>
+
+          <!-- tab: logs -->
+          <div class="debug-panel" id="panelLogs" style="display:none">
+            <div id="embeddedLogViewer"></div>
+          </div>
+
+          <!-- tab: crashes -->
+          <div class="debug-panel" id="panelCrashes" style="display:none">
+            <div id="crashViewer"></div>
+          </div>
+
+          <!-- tab: network -->
+          <div class="debug-panel" id="panelNetwork" style="display:none">
+            <div class="group">
+              <div class="muted" style="font-size:11px; margin-bottom:6px">📱 VM Connections</div>
+              <div class="muted" style="font-size:10px; margin-bottom:8px">
+                Live connection status between browser ↔ VM (video stream, input channel, WebRTC)
+              </div>
+              <div id="vmNetStatus"></div>
+            </div>
+            <div class="group" style="flex:1;display:flex;flex-direction:column;min-height:0">
+              <div class="muted" style="font-size:11px; margin-bottom:6px">🌐 API Monitor</div>
+              <div class="muted" style="font-size:10px; margin-bottom:8px">
+                All HTTP requests from this page to the backend server
+              </div>
+              <div id="networkInspector" style="flex:1;display:flex;flex-direction:column;min-height:0"></div>
+            </div>
+          </div>
+
+          <!-- tab: system -->
+          <div class="debug-panel" id="panelSystem" style="display:none">
+            <div id="systemPanel"></div>
+          </div>
+
+          <!-- tab: console -->
+          <div class="debug-panel" id="panelConsole" style="display:none">
+            <div class="group">
+              <div class="muted" style="font-size:11px; margin-bottom:6px">Command Mirror</div>
+              <div id="consoleLog" style="max-height:300px;overflow:auto;font-size:10px;white-space:pre-wrap;color:var(--muted);font-family:var(--font-mono)"></div>
+            </div>
+            <div class="group">
+              <div class="muted" style="font-size:11px; margin-bottom:6px">Send Text to VM</div>
+              <div class="muted" style="font-size:10px; margin-bottom:4px">Type text here and press Enter or click Send — it will be typed into the VM</div>
+              <div class="row">
+                <input id="textInput" type="text" placeholder="Type text to send to VM…" style="flex:1" />
+                <button id="textSend">Send Text</button>
+              </div>
+            </div>
+            <div class="group">
+              <div class="muted" style="font-size:11px; margin-bottom:6px">Raw JSON Command</div>
+              <div class="muted" style="font-size:10px; margin-bottom:4px">Send raw vsock JSON commands</div>
+              <div class="row">
+                <input id="cmdInput" type="text" placeholder='e.g. {"t":"ping"}' style="flex:1" />
+                <button id="cmdSend">Send JSON</button>
+              </div>
+            </div>
+            <div class="group">
+              <div class="muted" style="font-size:11px; margin-bottom:6px">Recent Commands</div>
+              <div id="cmdInspector"></div>
+            </div>
+          </div>
+
+          <!-- tab: ssh -->
+          <div class="debug-panel" id="panelSsh" style="display:none">
+            <div class="ssh-titlebar">
+              <span class="ssh-dot red"></span><span class="ssh-dot amber"></span><span class="ssh-dot green"></span>
+              <div class="ssh-tabs" id="sshTabs"></div>
+              <button class="ssh-addtab" id="sshAddTab" title="New shell tab (max 10)">+</button>
+            </div>
+            <div id="sshArea" class="ssh-area"></div>
+          </div>
+
+          <!-- tab: files (Filza-style filesystem browser, from /) -->
+          <div class="debug-panel" id="panelFiles" style="display:none">
+            <div class="fz-bar">
+              <button id="fzUp" title="Parent directory">↑</button>
+              <button id="fzHome" title="Root /">/</button>
+              <input id="fzPath" class="fz-path" spellcheck="false" autocomplete="off" value="/" />
+              <button id="fzGo">Go</button>
+              <button id="fzReload" title="Reload">⟳</button>
+              <button id="fzUpload" title="Upload file(s) to this folder">↥ Upload</button>
+              <input id="fzFileInput" type="file" multiple style="display:none" />
+            </div>
+            <div class="fz-crumbs" id="fzCrumbs"></div>
+            <div class="fz-list" id="fzList"></div>
+            <div class="fz-status" id="fzStatus"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/vendor/xterm.js"></script>
+  <script src="/static/vendor/xterm-addon-fit.js"></script>
+  <script src="/static/app.js?v=20260725b"></script>
+  <script src="/static/debug.js?v=20260725b"></script>
+  <script>
+    const vmId = qs("id");
+
+    // ---- tab switching ----
+    let activeTab = 'controls';
+    document.querySelectorAll('.debug-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.debug-tab').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        activeTab = btn.dataset.tab;
+        document.querySelectorAll('.debug-panel').forEach(p => p.style.display = 'none');
+        document.getElementById('panel' + activeTab.charAt(0).toUpperCase() + activeTab.slice(1)).style.display = '';
+        if (activeTab === 'ssh') { sshEnsureInit(); setTimeout(() => { sshInput.focus(); sshScrollBottom(); }, 0); }
+        if (activeTab === 'files') fzEnsureInit();
+      });
+    });
+
+    // ---- log helpers ----
+    const consoleEl = document.getElementById("consoleLog");
+    const consoleLog = (m) => { consoleEl.textContent += m + "\n"; consoleEl.scrollTop = consoleEl.scrollHeight; };
+    const setConn = (m, cls) => {
+      const el = document.getElementById("conn");
+      el.textContent = m; el.className = "row mono " + (cls || "");
+    };
+
+    // ---- command inspector (shared) ----
+    const cmdInspector = new DebugCommandInspector(document.getElementById("cmdInspector"));
+
+    let ws, inputReconnectTimer;
+    function openInputWS() {
+      if (ws && ws.readyState === WebSocket.OPEN) return;
+      const proto = location.protocol === "https:" ? "wss" : "ws";
+      ws = new WebSocket(`${proto}://${location.host}/api/vms/${vmId}/input`);
+      ws.onopen = () => {
+        consoleLog("input channel open");
+        setConn("input connected", "ok");
+        inputReconnectTimer = 0; // reset backoff on success
+      };
+      ws.onclose = (e) => {
+        consoleLog(`input channel closed (code=${e.code})`);
+        if (e.code === 4409) {
+          // VM not ready — retry with longer delay
+          consoleLog("VM not ready yet — retrying in 5s…");
+          clearTimeout(inputReconnectTimer);
+          inputReconnectTimer = setTimeout(openInputWS, 5000);
+        } else if (e.code === 4401 || e.code === 4403 || e.code === 4404) {
+          // Auth or permission errors — don't retry
+          consoleLog("input WS: auth/permission error — not reconnecting");
+          setConn("auth error", "err");
+        } else {
+          // Connection dropped — exponential backoff
+          const delay = inputReconnectTimer ? Math.min((inputReconnectTimer + 1) * 1500, 10000) : 3000;
+          consoleLog(`reconnecting input in ${delay/1000}s…`);
+          clearTimeout(inputReconnectTimer);
+          inputReconnectTimer = setTimeout(openInputWS, delay);
+        }
+      };
+      ws.onerror = () => {};
+    }
+    const sendInput = (obj) => {
+      if (ws && ws.readyState === 1) {
+        ws.send(JSON.stringify(obj));
+      } else {
+        consoleLog('[!] input WS not connected (state=' + (ws ? ws.readyState : 'null') + '), command dropped: ' + (obj.t || '?'));
+      }
+    };
+
+    // ---- video: WebRTC with MJPEG/WebSocket fallback ----
+    const video = document.getElementById("screen");
+    const canvas = document.getElementById("canvas");
+    let switched = false, mjpegWs = null;
+
+    function startMJPEG(reason) {
+      if (switched) return; switched = true;
+      video.style.display = "none";
+      canvas.style.display = "block";
+      setConn("streaming (ws)", "ok");
+      consoleLog("video: WebSocket mode" + (reason ? " (" + reason + ")" : ""));
+      const ctx = canvas.getContext("2d");
+      const proto = location.protocol === "https:" ? "wss" : "ws";
+      mjpegWs = new WebSocket(`${proto}://${location.host}/api/vms/${vmId}/mjpeg`);
+      mjpegWs.binaryType = "blob";
+      mjpegWs.onmessage = async (e) => {
+        try {
+          const bmp = await createImageBitmap(e.data);
+          if (canvas.width !== bmp.width) { canvas.width = bmp.width; canvas.height = bmp.height; }
+          ctx.drawImage(bmp, 0, 0); bmp.close();
+        } catch (_) {}
+      };
+      mjpegWs.onclose = () => {
+        consoleLog("video stream closed");
+        setConn("disconnected", "err");
+      };
+      mjpegWs.onerror = () => {
+        consoleLog("video stream error");
+        setConn("connection error", "err");
+      };
+    }
+
+    // ---- WebRTC with FPS tracking ----
+    let webrtcFrameCount = 0;
+    let webrtcFrameStart = 0;
+
+    async function startWebRTC() {
+      let pc;
+      try {
+        pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.cloudflare.com:3478" }] });
+        pc.addTransceiver("video", { direction: "recvonly" });
+        pc.ontrack = (e) => {
+          video.srcObject = e.streams[0];
+          // Track FPS for WebRTC
+          webrtcFrameStart = performance.now();
+          webrtcFrameCount = 0;
+          const track = e.track;
+          if (track) {
+            const origOnFrame = track.onframe;
+            // Use requestVideoFrameCallback-like approach: poll every second
+          }
+        };
+        pc.onconnectionstatechange = () => {
+          consoleLog("pc: " + pc.connectionState);
+          if (pc.connectionState === "connected" && !switched) {
+            setConn("streaming (webrtc)", "ok");
+            // Start FPS monitoring for WebRTC
+            webrtcFrameStart = performance.now();
+            webrtcFrameCount = 0;
+          }
+          if (["failed", "disconnected"].includes(pc.connectionState)) { try { pc.close(); } catch (_) {} startMJPEG(pc.connectionState); }
+        };
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+
+        // Get WebRTC answer and metadata
+        const answerResp = await apiJSON(`/api/vms/${vmId}/webrtc/offer`, "POST", {
+          sdp: pc.localDescription.sdp, type: pc.localDescription.type,
+        });
+        await pc.setRemoteDescription(answerResp);
+
+        // FPS poller for WebRTC (since we can't easily intercept frames)
+        const fpsInterval = setInterval(() => {
+          if (!pc || pc.connectionState !== "connected") {
+            clearInterval(fpsInterval);
+            return;
+          }
+          // Use getStats to get frame counters
+          pc.getStats(null).then(stats => {
+            stats.forEach(report => {
+              if (report.type === 'inbound-rtp' && report.kind === 'video') {
+                const frames = report.framesDecoded || report.framesReceived || 0;
+                if (frames > 0) {
+                  webrtcFrameCount = frames;
+                }
+              }
+            });
+          }).catch(() => {});
+        }, 1000);
+
+        setTimeout(() => { if (pc.connectionState !== "connected") { try { pc.close(); } catch (_) {} startMJPEG("timeout"); } }, 8000);
+      } catch (e) {
+        consoleLog("webrtc error: " + e.message);
+        startMJPEG("webrtc error");
+      }
+    }
+
+    async function startVideo() {
+      const isLocal = ["localhost", "127.0.0.1", "::1"].includes(location.hostname);
+      if (isLocal) await startWebRTC();
+      else startMJPEG("remote");
+    }
+
+    // ---- touch ----
+    const touch = document.getElementById("touch");
+    let pressing = false;
+    function coords(e) {
+      const r = touch.getBoundingClientRect();
+      return {
+        nx: Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)),
+        ny: Math.min(1, Math.max(0, (e.clientY - r.top) / r.height)),
+      };
+    }
+    touch.addEventListener("pointerdown", (e) => {
+      touch.setPointerCapture(e.pointerId);
+      pressing = true;
+      const c = coords(e);
+      sendInput({ t: "touch", phase: 0, nx: c.nx, ny: c.ny });
+      consoleLog(`[T] down(${c.nx.toFixed(2)},${c.ny.toFixed(2)})`);
+      cmdInspector.recordCommand("touch", `down(${c.nx.toFixed(2)},${c.ny.toFixed(2)})`, true, 0);
+    });
+    touch.addEventListener("pointermove", (e) => {
+      if (!pressing) return;
+      const c = coords(e);
+      sendInput({ t: "touch", phase: 1, nx: c.nx, ny: c.ny });
+    });
+    const endTouch = (e) => {
+      if (!pressing) return;
+      pressing = false;
+      const c = coords(e);
+      sendInput({ t: "touch", phase: 3, nx: c.nx, ny: c.ny });
+      consoleLog(`[T] up(${c.nx.toFixed(2)},${c.ny.toFixed(2)})`);
+    };
+    touch.addEventListener("pointerup", endTouch);
+    touch.addEventListener("pointercancel", endTouch);
+
+    // ---- hardware keys ----
+    document.querySelectorAll("[data-key]").forEach((b) => {
+      b.onclick = () => {
+        const keyName = b.dataset.key;
+        sendInput({ t: "key", name: keyName });
+        consoleLog(`[K] ${keyName}`);
+        cmdInspector.recordCommand("key", keyName, true, 0);
+      };
+    });
+
+    // ---- physical keyboard on touch layer ----
+    touch.style.outline = "none";
+    touch.addEventListener("pointerdown", () => touch.focus());
+    const SPECIAL = {
+      Enter: "return", Backspace: "backspace", Tab: "tab", Escape: "escape",
+      ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right",
+      Delete: "forwarddelete",
+    };
+    touch.addEventListener("keydown", (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'v') return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key.length === 1) {
+        sendInput({ t: "text", text: e.key });
+        consoleLog(`[⌨] text:'${e.key}'`);
+        e.preventDefault();
+      } else if (SPECIAL[e.key]) {
+        sendInput({ t: "speckey", name: SPECIAL[e.key] });
+        consoleLog(`[⌨] speckey:${SPECIAL[e.key]}`);
+        e.preventDefault();
+      }
+    });
+
+    // ---- PASTE on touch layer (Cmd+V / Ctrl+V) ----
+    touch.addEventListener("paste", (e) => {
+      e.preventDefault();
+      const text = (e.clipboardData || window.clipboardData).getData("text");
+      if (text) {
+        for (const ch of text) {
+          if (ch === '\n') sendInput({ t: "speckey", name: "return" });
+          else sendInput({ t: "text", text: ch });
+        }
+        consoleLog(`[📋] pasted ${text.length} chars`);
+        cmdInspector.recordCommand("paste", `${text.length} chars`, true, 0);
+      }
+    });
+
+    // ---- on-screen keyboard input ----
+    const kbdInput = document.getElementById("kbdInput");
+    kbdInput.addEventListener("beforeinput", (e) => {
+      const t = e.inputType;
+      if ((t === "insertText" || t === "insertFromPaste" || t === "insertFromDrop") && e.data) {
+        for (const ch of e.data) {
+          if (ch === '\n') sendInput({ t: "speckey", name: "return" });
+          else sendInput({ t: "text", text: ch });
+        }
+        if (t === "insertFromPaste") consoleLog(`[📋] pasted '${e.data.slice(0, 40)}${e.data.length > 40 ? '…' : ''}'`);
+        else consoleLog(`[⌨] type:'${e.data}'`);
+        e.preventDefault();
+      } else if (t === "insertLineBreak" || t === "insertParagraph") {
+        sendInput({ t: "speckey", name: "return" });
+        consoleLog("[⌨] return");
+        e.preventDefault();
+      } else if (t.startsWith("deleteContent")) {
+        sendInput({ t: "speckey", name: "backspace" });
+        consoleLog("[⌨] backspace");
+        e.preventDefault();
+      } else if (t === "insertCompositionText" && e.data) { return; }
+    });
+    kbdInput.addEventListener("compositionend", (e) => {
+      if (e.data) for (const ch of e.data) sendInput({ t: "text", text: ch });
+      kbdInput.value = "";
+    });
+
+    // ---- Paste button (browser clipboard → VM) ----
+    document.getElementById("pasteBtn").onclick = async () => {
+      try {
+        let text = '';
+        // Try clipboard API first
+        if (navigator.clipboard && navigator.clipboard.readText) {
+          text = await navigator.clipboard.readText();
+        }
+        // Fallback: prompt user
+        if (!text) {
+          text = prompt('Paste text to send to VM (clipboard API not available):');
+        }
+        if (text) {
+          for (const ch of text) {
+            if (ch === '\n') sendInput({ t: "speckey", name: "return" });
+            else sendInput({ t: "text", text: ch });
+          }
+          consoleLog(`[📋→VM] sent ${text.length} chars to VM`);
+          cmdInspector.recordCommand("paste→vm", `${text.length} chars`, true, 0);
+        }
+      } catch (err) {
+        // Clipboard API failed, fallback to prompt
+        const text = prompt('Paste text to send to VM:');
+        if (text) {
+          for (const ch of text) {
+            if (ch === '\n') sendInput({ t: "speckey", name: "return" });
+            else sendInput({ t: "text", text: ch });
+          }
+          consoleLog(`[📋→VM] sent ${text.length} chars to VM`);
+          cmdInspector.recordCommand("paste→vm", `${text.length} chars`, true, 0);
+        }
+      }
+    };
+
+    // ---- Copy from VM button (VM clipboard → browser) ----
+    document.getElementById("copyFromVm").onclick = async () => {
+      consoleLog('[📱] reading VM clipboard…');
+      try {
+        const resp = await fetch('/api/vms/' + vmId + '/clipboard', { credentials: 'same-origin' });
+        const data = await resp.json();
+        if (data.ok && data.text) {
+          try {
+            await navigator.clipboard.writeText(data.text);
+            consoleLog('[📱→📋] copied ' + data.text.length + ' chars from VM to browser clipboard');
+          } catch {
+            prompt('VM clipboard (select & copy):', data.text);
+            consoleLog('[📱→📋] VM clipboard: ' + data.text.slice(0, 50) + '…');
+          }
+          cmdInspector.recordCommand("vm→copy", data.text.length + " chars", true, 0);
+        } else if (data.ok && data.empty) {
+          consoleLog('[📱] VM clipboard is empty — copy something on the iOS device first');
+        } else {
+          consoleLog('[📱] clipboard read failed: ' + (data.error || 'unknown'));
+        }
+      } catch (e) {
+        consoleLog('[📱] clipboard read error: ' + e.message);
+      }
+    };
+
+    // ---- Send Text to VM (console tab) ----
+    function sendTextToVm(text) {
+      if (!text) return;
+      for (const ch of text) {
+        if (ch === '\n') sendInput({ t: "speckey", name: "return" });
+        else sendInput({ t: "text", text: ch });
+      }
+      consoleLog(`[⌨→VM] typed ${text.length} chars: "${text.slice(0, 50)}${text.length > 50 ? '…' : ''}"`);
+      cmdInspector.recordCommand("text", text.slice(0, 40), true, 0);
+    }
+
+    document.getElementById("textSend").onclick = () => {
+      const el = document.getElementById("textInput");
+      const text = el.value;
+      if (!text) return;
+      sendTextToVm(text);
+      el.value = '';
+    };
+    document.getElementById("textInput").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        document.getElementById("textSend").click();
+      }
+    });
+
+    // ---- send raw JSON command (console tab) ----
+    document.getElementById("cmdSend").onclick = () => {
+      const raw = document.getElementById("cmdInput").value.trim();
+      if (!raw) return;
+      try {
+        const obj = JSON.parse(raw);
+        sendInput(obj);
+        consoleLog(`[>>] ${raw}`);
+        cmdInspector.recordCommand(obj.t || "raw", raw.slice(0, 40), true, 0);
+        document.getElementById("cmdInput").value = '';
+      } catch {
+        consoleLog("[!!] Not valid JSON. Use 'Send Text' above for plain text.");
+      }
+    };
+    document.getElementById("cmdInput").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") document.getElementById("cmdSend").click();
+    });
+
+    // ---- SSH / interactive multi-session terminal (xterm.js + PTY over WS) ----
+    const SSH_MAX_TABS = 10;
+    const sshArea = document.getElementById("sshArea");
+    const sshTabsEl = document.getElementById("sshTabs");
+    const sshAddBtn = document.getElementById("sshAddTab");
+    const sshSessions = [];
+    let sshActive = null;
+    let sshSeq = 0;
+    // "One Dark"-style palette: high-contrast and readable on near-black.
+    const SSH_THEME = {
+      background: "#0d0f12", foreground: "#dfe3eb", cursor: "#56d364",
+      cursorAccent: "#0d0f12", selectionBackground: "#3a5a8c",
+      black: "#3b4048", red: "#e06c75", green: "#98c379", yellow: "#e5c07b",
+      blue: "#61afef", magenta: "#c678dd", cyan: "#56b6c2", white: "#cdd3de",
+      brightBlack: "#6b7280", brightRed: "#ef6f7a", brightGreen: "#a6d189",
+      brightYellow: "#f0d399", brightBlue: "#79c0ff", brightMagenta: "#d9a0ec",
+      brightCyan: "#6fd2dd", brightWhite: "#ffffff",
+    };
+
+    function sshSetTabState(s, state) { // 'up' | 'down' | ''
+      s.state = state;
+      if (s.dotEl) s.dotEl.className = "ssh-tab-dot" + (state ? " " + state : "");
+    }
+
+    function sshRenderTabs() {
+      sshTabsEl.innerHTML = "";
+      for (const s of sshSessions) {
+        const tab = document.createElement("div");
+        tab.className = "ssh-tab" + (s === sshActive ? " active" : "");
+        const dot = document.createElement("span");
+        dot.className = "ssh-tab-dot" + (s.state ? " " + s.state : "");
+        s.dotEl = dot; tab.appendChild(dot);
+        const name = document.createElement("span");
+        name.className = "ssh-tab-name"; name.textContent = s.name;
+        tab.appendChild(name);
+        if (sshSessions.length > 1) {
+          const x = document.createElement("span");
+          x.className = "ssh-tab-x"; x.textContent = "×"; x.title = "Close tab";
+          x.onclick = (e) => { e.stopPropagation(); sshCloseSession(s); };
+          tab.appendChild(x);
+        }
+        tab.onclick = () => sshActivate(s);
+        sshTabsEl.appendChild(tab);
+      }
+      sshAddBtn.disabled = sshSessions.length >= SSH_MAX_TABS;
+    }
+
+    function sshActivate(s) {
+      sshActive = s;
+      sshSessions.forEach((x) => { x.wrap.style.display = x === s ? "" : "none"; });
+      sshRenderTabs();
+      setTimeout(() => {
+        try { s.fit.fit(); } catch (e) {}
+        s.term.focus();
+        sshSendResize(s);
+      }, 0);
+    }
+
+    function sshSendResize(s) {
+      if (s.ws && s.ws.readyState === WebSocket.OPEN) {
+        try { s.ws.send(JSON.stringify({ resize: [s.term.cols, s.term.rows] })); } catch (e) {}
+      }
+    }
+
+    function sshConnect(s) {
+      const proto = location.protocol === "https:" ? "wss" : "ws";
+      const ws = new WebSocket(`${proto}://${location.host}/api/vms/${vmId}/pty`);
+      ws.binaryType = "arraybuffer";
+      s.ws = ws;
+      const enc = new TextEncoder();
+      ws.onopen = () => {
+        sshSetTabState(s, "up");
+        ws.send(JSON.stringify({ cols: s.term.cols, rows: s.term.rows }));
+        s.dataDispose = s.term.onData((d) => {
+          if (ws.readyState === WebSocket.OPEN) ws.send(enc.encode(d));
+        });
+      };
+      ws.onmessage = (e) => {
+        s.term.write(new Uint8Array(e.data));
+      };
+      ws.onclose = () => {
+        sshSetTabState(s, "down");
+        if (!s.closing) s.term.write("\r\n\x1b[31m[disconnected — guest shell ended or VM stopped]\x1b[0m\r\n");
+      };
+      ws.onerror = () => { sshSetTabState(s, "down"); };
+    }
+
+    function sshNewSession() {
+      if (sshSessions.length >= SSH_MAX_TABS) return null;
+      const id = ++sshSeq;
+      const wrap = document.createElement("div");
+      wrap.className = "ssh-xterm";
+      wrap.style.display = "none";
+      sshArea.appendChild(wrap);
+      const term = new Terminal({
+        // Concrete font stack — xterm renders to canvas and can't resolve CSS
+        // vars, so name the same faces macOS Terminal.app uses.
+        fontFamily: "'SF Mono', SFMono-Regular, Menlo, Monaco, 'Cascadia Code', Consolas, monospace",
+        fontSize: 13, fontWeight: "400", fontWeightBold: "600",
+        lineHeight: 1.2, letterSpacing: 0,
+        cursorBlink: true, cursorStyle: "block", scrollback: 5000,
+        theme: SSH_THEME, allowProposedApi: true,
+      });
+      const fit = new FitAddon.FitAddon();
+      term.loadAddon(fit);
+      term.open(wrap);
+      try { fit.fit(); } catch (e) {}
+      term.onResize(() => sshSendResize(s));
+      const s = { id, name: "shell " + id, term, fit, wrap, ws: null, state: "", closing: false };
+      sshSessions.push(s);
+      sshConnect(s);
+      sshActivate(s);
+      return s;
+    }
+
+    function sshCloseSession(s) {
+      const i = sshSessions.indexOf(s);
+      if (i < 0) return;
+      s.closing = true;
+      try { if (s.dataDispose) s.dataDispose.dispose(); } catch (e) {}
+      try { if (s.ws) s.ws.close(); } catch (e) {}
+      try { s.term.dispose(); } catch (e) {}
+      s.wrap.remove();
+      sshSessions.splice(i, 1);
+      if (sshSessions.length === 0) { sshNewSession(); return; }
+      if (sshActive === s) sshActivate(sshSessions[Math.max(0, i - 1)]);
+      else sshRenderTabs();
+    }
+
+    function sshEnsureInit() { if (sshSessions.length === 0) sshNewSession(); }
+
+    sshAddBtn.onclick = () => sshNewSession();
+    // Refit the active terminal when the window (and thus the sidebar) resizes.
+    window.addEventListener("resize", () => {
+      if (activeTab === "ssh" && sshActive) {
+        try { sshActive.fit.fit(); } catch (e) {}
+        sshSendResize(sshActive);
+      }
+    });
+
+    // ---- Files: Filza-style filesystem browser (from /) ----
+    const fzPathEl = document.getElementById("fzPath");
+    const fzListEl = document.getElementById("fzList");
+    const fzCrumbsEl = document.getElementById("fzCrumbs");
+    const fzStatusEl = document.getElementById("fzStatus");
+    let fzCwd = "/";
+    let fzInited = false;
+
+    function fzEnsureInit() { if (!fzInited) { fzInited = true; fzLoad("/"); } }
+    function fzStatus(msg, err) { fzStatusEl.textContent = msg || ""; fzStatusEl.className = "fz-status" + (err ? " err" : ""); }
+    function fzFmtSize(n) {
+      n = +n || 0;
+      if (n < 1024) return n + " B";
+      const u = ["KB", "MB", "GB", "TB"]; let i = -1;
+      do { n /= 1024; i++; } while (n >= 1024 && i < u.length - 1);
+      return n.toFixed(n < 10 ? 1 : 0) + " " + u[i];
+    }
+    function fzJoin(dir, name) { return (dir.endsWith("/") ? dir : dir + "/") + name; }
+    function fzParent(p) {
+      if (p === "/" || p === "") return "/";
+      const t = p.replace(/\/+$/, "");
+      const i = t.lastIndexOf("/");
+      return i <= 0 ? "/" : t.slice(0, i);
+    }
+
+    function fzRenderCrumbs(path) {
+      fzCrumbsEl.innerHTML = "";
+      const mkSeg = (label, full) => {
+        const s = document.createElement("span"); s.className = "seg"; s.textContent = label;
+        s.onclick = () => fzLoad(full); return s;
+      };
+      fzCrumbsEl.appendChild(mkSeg("/", "/"));
+      const parts = path.split("/").filter(Boolean);
+      let acc = "";
+      parts.forEach((p, idx) => {
+        acc += "/" + p;
+        const sep = document.createElement("span"); sep.className = "sep"; sep.textContent = " › ";
+        fzCrumbsEl.appendChild(sep);
+        fzCrumbsEl.appendChild(mkSeg(p, acc));
+      });
+    }
+
+    async function fzLoad(path) {
+      path = path || "/";
+      fzStatus("loading " + path + " …");
+      fzListEl.innerHTML = "";
+      let r;
+      try {
+        r = await api(`/api/vms/${vmId}/fs?path=${encodeURIComponent(path)}`);
+      } catch (e) { fzStatus(e.message, true); return; }
+      if (!r.ok) { fzStatus(r.error || "list failed", true); return; }
+      fzCwd = r.path || path;
+      fzPathEl.value = fzCwd;
+      fzRenderCrumbs(fzCwd);
+      const entries = (r.entries || []).slice().sort((a, b) => {
+        const ad = a.type === "dir" || (a.type === "link" && a.link_target_dir);
+        const bd = b.type === "dir" || (b.type === "link" && b.link_target_dir);
+        if (ad !== bd) return ad ? -1 : 1;
+        return a.name.localeCompare(b.name);
+      });
+      for (const e of entries) {
+        const isDir = e.type === "dir" || (e.type === "link" && e.link_target_dir);
+        const row = document.createElement("div");
+        row.className = "fz-row" + (isDir ? " dir" : "");
+        const ic = e.type === "link" ? "🔗" : (e.type === "dir" ? "📁" : "📄");
+        const meta = (e.type === "file" ? fzFmtSize(e.size) + " · " : "") + (e.perm || "");
+        row.innerHTML = `<span class="fz-ic">${ic}</span>`
+          + `<span class="fz-name"></span>`
+          + `<span class="fz-meta">${meta}</span>`;
+        const nameEl = row.querySelector(".fz-name");
+        nameEl.textContent = e.name;
+        const full = fzJoin(fzCwd, e.name);
+        if (isDir) {
+          nameEl.onclick = () => fzLoad(full);
+        } else if (e.type === "file") {
+          const dl = document.createElement("button");
+          dl.className = "fz-dl"; dl.textContent = "↓";
+          dl.title = "Download " + e.name;
+          dl.onclick = () => { window.location = `/api/vms/${vmId}/fs/download?path=${encodeURIComponent(full)}`; };
+          row.appendChild(dl);
+        }
+        fzListEl.appendChild(row);
+      }
+      fzStatus(entries.length + " item(s)");
+    }
+
+    document.getElementById("fzUp").onclick = () => fzLoad(fzParent(fzCwd));
+    document.getElementById("fzHome").onclick = () => fzLoad("/");
+    document.getElementById("fzReload").onclick = () => fzLoad(fzCwd);
+    document.getElementById("fzGo").onclick = () => fzLoad(fzPathEl.value.trim() || "/");
+    fzPathEl.addEventListener("keydown", (e) => { if (e.key === "Enter") fzLoad(fzPathEl.value.trim() || "/"); });
+
+    // ---- Files: upload into current directory ----
+    const fzFileInput = document.getElementById("fzFileInput");
+    async function fzUploadOne(f, dir) {
+      const fd = new FormData();
+      fd.append("file", f, f.name);
+      const res = await fetch(`/api/vms/${vmId}/fs/upload?path=${encodeURIComponent(dir)}`,
+        { method: "POST", credentials: "same-origin", body: fd });
+      const j = await res.json().catch(() => ({ ok: false, error: "bad response" }));
+      if (!res.ok || !j.ok) throw new Error(j.error || ("HTTP " + res.status));
+      return j;
+    }
+    async function fzUploadFiles(files) {
+      if (!files || !files.length) return;
+      const dir = fzCwd;
+      let done = 0;
+      for (const f of files) {
+        fzStatus(`uploading ${f.name} (${done + 1}/${files.length}) …`);
+        try { await fzUploadOne(f, dir); done++; }
+        catch (e) { fzStatus(`upload ${f.name} failed: ${e.message}`, true); return; }
+      }
+      fzStatus(`uploaded ${done} file(s)`);
+      if (dir === fzCwd) fzLoad(fzCwd);
+    }
+    document.getElementById("fzUpload").onclick = () => fzFileInput.click();
+    fzFileInput.onchange = () => { fzUploadFiles(fzFileInput.files); fzFileInput.value = ""; };
+    // Drag-and-drop onto the list uploads into the current directory.
+    ["dragover", "dragenter"].forEach((ev) =>
+      fzListEl.addEventListener(ev, (e) => { e.preventDefault(); fzListEl.style.outline = "1px dashed var(--blue,#61afef)"; }));
+    ["dragleave", "drop"].forEach((ev) =>
+      fzListEl.addEventListener(ev, (e) => { e.preventDefault(); fzListEl.style.outline = ""; }));
+    fzListEl.addEventListener("drop", (e) => {
+      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length)
+        fzUploadFiles(e.dataTransfer.files);
+    });
+
+    // ---- install ----
+    const drop = document.getElementById("drop");
+    const fileInput = document.getElementById("file");
+    drop.onclick = () => fileInput.click();
+    fileInput.onchange = () => fileInput.files[0] && upload(fileInput.files[0]);
+    ["dragover", "dragenter"].forEach((ev) =>
+      drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add("drag"); }));
+    ["dragleave", "drop"].forEach((ev) =>
+      drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove("drag"); }));
+    drop.addEventListener("drop", (e) => {
+      const f = e.dataTransfer.files[0]; if (f) upload(f);
+    });
+    const upbar = document.getElementById("upbar");
+    const upfill = upbar.querySelector("i");
+    const upinfo = document.getElementById("upinfo");
+    const fmtMB = (b) => (b / 1e6).toFixed(1);
+
+    function putChunk(uploadId, offset, blob, onprog) {
+      return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", `/api/vms/${vmId}/install_chunk?upload_id=${uploadId}&offset=${offset}`);
+        xhr.withCredentials = true;
+        xhr.setRequestHeader("Content-Type", "application/octet-stream");
+        xhr.upload.onprogress = (e) => { if (e.lengthComputable) onprog(e.loaded); };
+        xhr.onload = () => (xhr.status >= 200 && xhr.status < 300)
+          ? resolve()
+          : reject(new Error("chunk HTTP " + xhr.status));
+        xhr.onerror = () => reject(new Error("network"));
+        xhr.send(blob);
+      });
+    }
+
+    async function upload(file) {
+      if (!file.name.match(/\.(ipa|tipa)$/i)) { consoleLog("only .ipa/.tipa supported"); return; }
+      const CHUNK = 8 * 1024 * 1024;
+      const uploadId = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+      upbar.style.display = "block";
+      upbar.classList.remove("indet");
+      upfill.style.width = "0%";
+      upinfo.style.display = "block";
+      upinfo.textContent = `uploading ${file.name} (${fmtMB(file.size)} MB) …`;
+      consoleLog(`uploading ${file.name} (${fmtMB(file.size)} MB) …`);
+      let lastT = performance.now(), lastSent = 0, speed = 0;
+      const render = (cur) => {
+        const pct = (cur / file.size) * 100;
+        upfill.style.width = pct.toFixed(1) + "%";
+        const now = performance.now(), dt = (now - lastT) / 1000;
+        if (dt > 0.3) { speed = (cur - lastSent) / dt; lastT = now; lastSent = cur; }
+        const eta = speed > 0 ? Math.max(0, (file.size - cur) / speed) : 0;
+        upinfo.textContent =
+          `${pct.toFixed(0)}%  ·  ${fmtMB(cur)}/${fmtMB(file.size)} MB` +
+          (speed ? `  ·  ${fmtMB(speed)} MB/s` : "") +
+          (eta ? `  ·  ~${eta.toFixed(0)}s left` : "");
+      };
+      try {
+        let sent = 0;
+        for (let off = 0; off < file.size; off += CHUNK) {
+          const blob = file.slice(off, Math.min(off + CHUNK, file.size));
+          await putChunk(uploadId, off, blob, (loaded) => render(sent + loaded));
+          sent += blob.size;
+          render(sent);
+        }
+      } catch (e) {
+        upbar.classList.remove("indet"); upbar.style.display = "none";
+        upinfo.textContent = "✗ upload failed (" + e.message + ")";
+        consoleLog("upload error: " + e.message);
+        return;
+      }
+      upfill.style.width = "100%";
+      upbar.classList.add("indet");
+      upinfo.textContent = "installing on device… (signing + install, please wait)";
+      consoleLog("upload complete — installing on device…");
+      try {
+        const method = document.getElementById("tsToggle").checked ? "trollstore" : "builtin";
+        const res = await fetch(`/api/vms/${vmId}/install_finish`, {
+          method: "POST", credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ upload_id: uploadId, filename: file.name, method }),
+        });
+        const j = await res.json().catch(() => ({}));
+        upbar.classList.remove("indet"); upbar.style.display = "none";
+        if (j.ok) { upinfo.textContent = "✓ " + (j.msg || "installed"); consoleLog("install: " + (j.msg || "ok")); }
+        else { upinfo.textContent = "✗ " + (j.error || j.detail || "install failed"); consoleLog("install failed: " + (j.error || j.detail || "unknown")); }
+      } catch (e) {
+        upbar.classList.remove("indet"); upbar.style.display = "none";
+        upinfo.textContent = "✗ install error: " + e.message;
+        consoleLog("install error: " + e.message);
+      }
+    }
+
+    // ---- init ----
+    (async () => {
+      const me = await loadMe();
+      buildShell(me);
+
+      // === Network inspector FIRST — intercept ALL fetch calls from the start ===
+      try {
+        new DebugNetworkInspector(document.getElementById("networkInspector"));
+      } catch (e) { consoleLog("[init] Network inspector error: " + e.message); }
+
+      const { vms } = await api("/api/vms");
+      const vm = vms.find((v) => String(v.id) === String(vmId));
+      document.title = vm ? `vphone — ${vm.name}` : 'vphone — device';
+
+      // Only connect if VM appears to be running or starting
+      if (vm && (vm.status === 'running' || vm.status === 'starting')) {
+        openInputWS();
+        try {
+          await startVideo();
+        } catch (e) {
+          setConn("error", "err");
+          consoleLog("video error: " + e.message);
+        }
+      } else {
+        setConn("VM is " + (vm ? vm.status : 'unknown'), "muted");
+        consoleLog("VM is not running. Start it from the dashboard first.");
+      }
+
+      // === Initialize debug panels (non-critical, wrapped in try/catch) ===
+      try {
+        new DebugAppManager(document.getElementById("appManager"), parseInt(vmId));
+      } catch (e) { consoleLog("[init] Apps panel error: " + e.message); }
+
+      try {
+        new DebugLogViewer(document.getElementById("embeddedLogViewer"), {
+          vmId: parseInt(vmId),
+          logName: 'boot',
+        });
+      } catch (e) { consoleLog("[init] Log viewer error: " + e.message); }
+
+      try {
+        new DebugCrashViewer(document.getElementById("crashViewer"), parseInt(vmId));
+      } catch (e) { consoleLog("[init] Crash viewer error: " + e.message); }
+
+      try {
+        const sysPanel = new DebugSystemPanel(document.getElementById("systemPanel"), parseInt(vmId));
+        sysPanel.start();
+      } catch (e) { consoleLog("[init] System panel error: " + e.message); }
+
+      // VM connection status poller
+      const vmNetEl = document.getElementById("vmNetStatus");
+      async function pollVmNet() {
+        try {
+          const resp = await fetch(`/api/vms/${vmId}/metrics`, { credentials: 'same-origin' });
+          if (!resp.ok) return;
+          const m = await resp.json();
+
+          // Also update WebRTC FPS from stats
+          if (webrtcFrameCount > 0) {
+            m.fps = m.fps || {};
+            m.fps.current = webrtcFrameCount;
+            m.fps.avg = m.fps.avg || webrtcFrameCount;
+            if (!m.video) m.video = {};
+            m.video.frames_received = webrtcFrameCount;
+            m.video.connected = true;
+          }
+
+          const vidIcon = m.video?.connected ? '🟢' : '🔴';
+          const inpIcon = m.input?.connected ? '🟢' : '🔴';
+          const vidUp = m.video?.uptime_sec || 0;
+          const inpUp = m.input?.uptime_sec || 0;
+          const fps = m.fps?.current || 0;
+          const lat = m.latency?.avg_ms || 0;
+          const framesReceived = m.video?.frames_received || 0;
+
+          vmNetEl.innerHTML = `
+            <table class="stats-table">
+              <tr><td>${vidIcon} Video Stream</td>
+                <td>${m.video?.connected ? 'Connected' : 'Disconnected'} · ${Math.floor(vidUp/60)}m up · ${framesReceived} frames</td></tr>
+              <tr><td>${inpIcon} Input Channel</td>
+                <td>${m.input?.connected ? 'Connected' : 'Disconnected'} · ${Math.floor(inpUp/60)}m up · ${m.input?.commands_ok || 0} cmds</td></tr>
+              <tr><td>📊 FPS</td>
+                <td>${fps.toFixed(1)} now · avg ${(m.fps?.avg || 0).toFixed(1)} · p95 ${(m.fps?.p95 || 0).toFixed(1)}</td></tr>
+              <tr><td>⏱ Latency</td>
+                <td>avg ${lat.toFixed(0)}ms · p95 ${(m.latency?.p95_ms || 0).toFixed(0)}ms · max ${(m.latency?.max_ms || 0).toFixed(0)}ms</td></tr>
+              <tr><td>📡 Bandwidth</td>
+                <td>${((m.stream?.bytes_sent || 0) / 1048576).toFixed(1)} MB sent · ${m.input?.reconnects || 0} reconnects</td></tr>
+              <tr><td>❌ Errors</td>
+                <td>${m.input?.commands_fail || 0} failed · ${m.video?.frames_dropped || 0} dropped</td></tr>
+            </table>`;
+        } catch {}
+      }
+      pollVmNet();
+      setInterval(pollVmNet, 3000);
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>vphone — logs</title>
+  <link rel="stylesheet" href="/static/style.css?v=20260625a" />
+</head>
+<body>
+  <div class="topbar" id="topbar"></div>
+  <div class="main-content" style="overflow:hidden">
+    <div style="padding:16px 20px; height:100%; display:flex; flex-direction:column;">
+      <h1 style="flex-shrink:0; margin-bottom:12px">VM Logs <span class="muted" id="sub"></span></h1>
+      <div class="logs-stage" style="flex:1; min-height:0;">
+        <div class="vm-list" id="vmList"></div>
+        <div class="log-pane">
+          <div class="log-toolbar">
+            <strong id="curName" class="muted">Select a VM</strong>
+            <span class="spacer" style="flex:1"></span>
+            <span class="log-info">Log:</span>
+            <select id="logType">
+              <option value="boot">boot.log</option>
+              <option value="debug">debug.log</option>
+            </select>
+            <input type="text" id="searchInput" placeholder="Search or /regex/" />
+            <select id="levelFilter">
+              <option value="">All levels</option>
+              <option value="error">Error</option>
+              <option value="warn">Warning</option>
+              <option value="info">Info</option>
+              <option value="debug">Debug</option>
+            </select>
+            <span class="match-count" id="matchCount"></span>
+            <label class="chk"><input type="checkbox" id="follow" checked /> follow</label>
+            <button id="downloadBtn">↓ Download</button>
+            <button id="clear">Clear</button>
+          </div>
+          <div class="log-body" id="logBody">
+            <div class="vscroller" id="vscroller"></div>
+            <div class="new-data" id="newData" onclick="scrollToBottom()">▼ new data below</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js?v=20260625a"></script>
+  <script src="/static/debug.js?v=20260625a"></script>
+  <script>
+    let me, vms = [], current = null, ws = null;
+
+    const bodyEl = document.getElementById("logBody");
+    const scrollEl = document.getElementById("vscroller");
+    const newDataEl = document.getElementById("newData");
+    const followEl = document.getElementById("follow");
+    const searchEl = document.getElementById("searchInput");
+    const levelEl = document.getElementById("levelFilter");
+    const logTypeEl = document.getElementById("logType");
+    const matchCountEl = document.getElementById("matchCount");
+
+    let allLines = [];
+    let renderedCount = 0;
+    const LINE_HEIGHT = 16;
+    const VIS_BUF = 20;
+
+    function fmtSize(n) {
+      if (n > 1e6) return (n / 1e6).toFixed(1) + "M";
+      if (n > 1e3) return (n / 1e3).toFixed(0) + "K";
+      return n + "B";
+    }
+
+    function filterLines(lines) {
+      const level = levelEl.value;
+      const q = searchEl.value.trim();
+      let filtered = lines;
+      if (level) {
+        filtered = filtered.filter(l => classifyLevel(l) === 'lvl-' + level);
+      }
+      if (q) {
+        if (q.startsWith('/') && q.endsWith('/') && q.length >= 3) {
+          try {
+            const re = new RegExp(q.slice(1, -1), 'i');
+            filtered = filtered.filter(l => re.test(l));
+          } catch {
+            const lower = q.toLowerCase();
+            filtered = filtered.filter(l => l.toLowerCase().includes(lower));
+          }
+        } else {
+          const lower = q.toLowerCase();
+          filtered = filtered.filter(l => l.toLowerCase().includes(lower));
+        }
+      }
+      return filtered;
+    }
+
+    function buildHtml(lines) {
+      const q = searchEl.value.trim();
+      let re = null;
+      if (q && !(q.startsWith('/') && q.endsWith('/'))) {
+        re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+      }
+      return lines.map(line => {
+        const cls = classifyLevel(line);
+        let html = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        if (re) html = html.replace(re, m => `<mark class="log-match">${m}</mark>`);
+        return `<span class="${cls}">${html}</span>`;
+      }).join('\n');
+    }
+
+    function renderVisible() {
+      const filtered = filterLines(allLines);
+      const total = filtered.length;
+      if (total <= 200) {
+        scrollEl.style.height = 'auto';
+        scrollEl.innerHTML = '<pre>' + buildHtml(filtered) + '</pre>';
+        renderedCount = total;
+        bodyEl.scrollTop = bodyEl.scrollHeight;
+      } else {
+        const scrollTop = bodyEl.scrollTop;
+        const viewH = bodyEl.clientHeight;
+        const firstVis = Math.max(0, Math.floor(scrollTop / LINE_HEIGHT) - VIS_BUF);
+        const visCount = Math.ceil(viewH / LINE_HEIGHT) + VIS_BUF * 2;
+        const lastVis = Math.min(total, firstVis + visCount);
+        const visible = filtered.slice(firstVis, lastVis);
+        scrollEl.style.height = (total * LINE_HEIGHT) + 'px';
+        scrollEl.style.paddingTop = (firstVis * LINE_HEIGHT) + 'px';
+        scrollEl.innerHTML = '<pre>' + buildHtml(visible) + '</pre>';
+        renderedCount = visible.length;
+      }
+      matchCountEl.textContent = total !== allLines.length
+        ? `${total} matches`
+        : `${allLines.length} lines`;
+    }
+
+    function append(text) {
+      const newLines = text.split('\n');
+      if (allLines.length && newLines.length) {
+        allLines[allLines.length - 1] += newLines.shift();
+      }
+      if (text.endsWith('\n')) {
+        allLines.push(...newLines.slice(0, -1));
+      } else {
+        allLines.push(...newLines);
+      }
+      if (allLines.length > 50000) {
+        allLines = allLines.slice(-30000);
+      }
+      const atBottom = bodyEl.scrollHeight - bodyEl.scrollTop - bodyEl.clientHeight < 40;
+      renderVisible();
+      if (followEl.checked || atBottom) {
+        bodyEl.scrollTop = bodyEl.scrollHeight;
+        newDataEl.style.display = 'none';
+      } else {
+        newDataEl.style.display = 'block';
+      }
+    }
+
+    function scrollToBottom() {
+      bodyEl.scrollTop = bodyEl.scrollHeight;
+      newDataEl.style.display = 'none';
+    }
+
+    async function refreshList() {
+      try {
+        vms = (await api("/api/logs")).vms;
+      } catch { return; }
+      const el = document.getElementById("vmList");
+      el.innerHTML = "";
+      for (const vm of vms) {
+        const div = document.createElement("div");
+        div.className = "item" + (current === vm.id ? " active" : "");
+        const sz = logTypeEl.value === 'debug' ? (vm.debug_log_size || 0) : vm.size;
+        div.innerHTML = `<span><span class="dot ${vm.status}"></span> ${vm.name}</span>
+                         <span class="muted" style="font-size:11px">${fmtSize(sz)}</span>`;
+        div.onclick = () => open(vm.id);
+        el.appendChild(div);
+      }
+    }
+
+    function open(vmId) {
+      current = vmId;
+      const vm = vms.find((v) => v.id === vmId);
+      document.getElementById("curName").textContent = vm ? vm.name : "";
+      document.getElementById("curName").className = "";
+      allLines = [];
+      renderVisible();
+      if (ws) { ws.close(); ws = null; }
+      refreshList();
+      const proto = location.protocol === "https:" ? "wss" : "ws";
+      const logName = logTypeEl.value;
+      ws = new WebSocket(`${proto}://${location.host}/api/logs/${vmId}/stream?format=json&log=${logName}`);
+      ws.onmessage = (e) => {
+        try {
+          const msg = JSON.parse(e.data);
+          if (msg.type === 'chunk') append(msg.data);
+          else if (msg.type === 'reset') { allLines = []; append('--- ' + msg.data + ' ---\n'); }
+          else if (msg.type === 'info') append('(' + msg.data + ')\n');
+        } catch { append(e.data); }
+      };
+      ws.onclose = () => append("\n[stream closed]\n");
+      ws.onerror = () => { ws?.close(); };
+    }
+
+    document.getElementById("clear").onclick = () => { allLines = []; renderVisible(); };
+    document.getElementById("downloadBtn").onclick = async () => {
+      if (!current) return;
+      window.open(`/api/logs/${current}/download?log=${logTypeEl.value}`, '_blank');
+    };
+    searchEl.addEventListener('input', () => renderVisible());
+    levelEl.addEventListener('change', () => renderVisible());
+    logTypeEl.addEventListener('change', () => { refreshList(); if (current) open(current); });
+    bodyEl.addEventListener('scroll', () => {
+      const atBottom = bodyEl.scrollHeight - bodyEl.scrollTop - bodyEl.clientHeight < 30;
+      if (atBottom) newDataEl.style.display = 'none';
+      if (!atBottom && allLines.length > 200) renderVisible();
+    });
+
+    (async () => {
+      me = await loadMe();
+      buildShell(me);
+      if (me.role !== "admin") { location.href = "/"; return; }
+      document.getElementById("sub").textContent =
+        location.host.startsWith("logs.") ? "(" + location.host + ")" : "";
+      await refreshList();
+      setInterval(refreshList, 5000);
+      if (vms.length) open(vms[0].id);
+    })();
+  </script>
+</body>
+</html>

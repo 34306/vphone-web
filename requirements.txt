@@ -1,0 +1,14 @@
+# vphone-web — Python dependencies for the web platform only.
+# (The vphone-cli firmware/build toolchain has its own requirements under
+#  vendor/vphone-cli/requirements.txt — install those separately when building.)
+fastapi
+uvicorn[standard]
+aiortc
+av
+pillow
+numpy
+passlib[bcrypt]
+bcrypt<4.1
+python-multipart
+itsdangerous
+sqlalchemy>=2.0

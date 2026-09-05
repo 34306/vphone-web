@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>vphone — admin</title>
+  <link rel="stylesheet" href="/static/style.css?v=20260625a" />
+</head>
+<body>
+  <div class="topbar" id="topbar"></div>
+  <div class="main-content">
+    <div class="container">
+      <h1>Admin Panel</h1>
+
+      <h2>Create VM</h2>
+      <div class="card">
+        <div class="row">
+          <input id="vmName" placeholder="name (e.g. test-1)" />
+          <select id="vmIos" title="iOS version"></select>
+          <input id="vmCpu" type="number" value="4" style="width:70px" title="CPU" />
+          <input id="vmMem" type="number" value="4096" style="width:90px" title="Memory MB" />
+          <button class="primary" id="createVm">+ Clone & Create</button>
+          <span id="vmErr" class="err"></span>
+        </div>
+        <div class="muted" style="margin-top:8px; font-size:11px">Clones the base disk for the chosen iOS version (instant, copy-on-write).</div>
+      </div>
+
+      <h2>VMs</h2>
+      <div class="card" style="padding:0; overflow:hidden">
+        <table>
+          <thead><tr><th>Name</th><th>iOS</th><th>Status</th><th>CPU / RAM</th><th>Assigned Users</th><th>Actions</th></tr></thead>
+          <tbody id="vmRows"></tbody>
+        </table>
+      </div>
+
+      <h2>Create User</h2>
+      <div class="card">
+        <div class="row" style="flex-wrap:wrap; align-items:center">
+          <input id="uName" placeholder="username" />
+          <input id="uPass" type="password" placeholder="password" />
+          <select id="uRole"><option value="user">user</option><option value="admin">admin</option></select>
+          <select id="uDuration" title="Access duration">
+            <option value="unlimited">∞ Unlimited</option>
+            <option value="1d">1 day</option>
+            <option value="1w">1 week</option>
+            <option value="1mo">1 month</option>
+            <option value="3mo">3 months</option>
+            <option value="6mo">6 months</option>
+            <option value="1y">1 year</option>
+          </select>
+          <label class="muted" style="display:flex; gap:4px; align-items:center; font-size:11px">
+            <input type="checkbox" id="uCanStart" /> can start</label>
+          <label class="muted" style="display:flex; gap:4px; align-items:center; font-size:11px">
+            <input type="checkbox" id="uCanStop" /> can stop</label>
+          <button class="primary" id="createUser">+ Create</button>
+          <span id="uErr" class="err"></span>
+        </div>
+        <div class="muted" style="margin-top:8px; font-size:11px">Duration & power perms apply to users only — admins are always unlimited and can start/stop.</div>
+      </div>
+
+      <h2>Users</h2>
+      <div class="card" style="padding:0; overflow:hidden">
+        <table>
+          <thead><tr><th>Username</th><th>Role</th><th>Access</th><th>Power</th><th>Actions</th></tr></thead>
+          <tbody id="userRows"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js?v=20260625a"></script>
+  <script>
+    let users = [], vms = [];
+
+    async function refresh() {
+      users = (await api("/api/admin/users")).users;
+      vms = (await api("/api/admin/vms")).vms;
+      renderVms();
+      renderUsers();
+    }
+
+    function renderVms() {
+      const tb = document.getElementById("vmRows");
+      tb.innerHTML = "";
+      for (const vm of vms) {
+        const tr = document.createElement("tr");
+        const assigned = (vm.users || []).map((u) => u.id);
+        const checks = users.map((u) =>
+          `<label style="display:block; font-size:12px; padding:2px 0"><input type="checkbox" data-uid="${u.id}" ${assigned.includes(u.id) ? "checked" : ""}/> ${u.username}</label>`
+        ).join("");
+        tr.innerHTML = `
+          <td><strong>${vm.name}</strong></td>
+          <td class="mono" style="font-size:12px">${vm.ios_version || "26.1"}</td>
+          <td><span class="status ${vm.status}">${vm.status}</span></td>
+          <td class="mono" style="font-size:12px">${vm.cpu} / ${vm.mem_mb} MB</td>
+          <td>${checks}<button data-save style="margin-top:6px">Save</button></td>
+          <td><button class="danger" data-del>Delete</button></td>`;
+        tr.querySelector("[data-save]").onclick = async () => {
+          const ids = [...tr.querySelectorAll("input[data-uid]:checked")].map((c) => +c.dataset.uid);
+          await apiJSON(`/api/admin/vms/${vm.id}/assign`, "POST", { user_ids: ids });
+          await refresh();
+        };
+        tr.querySelector("[data-del]").onclick = async () => {
+          if (!confirm(`Delete VM ${vm.name}? This removes its disk.`)) return;
+          await api(`/api/admin/vms/${vm.id}`, { method: "DELETE" });
+          await refresh();
+        };
+        tb.appendChild(tr);
+      }
+    }
+
+    const DURATION_OPTS = [
+      ["unlimited", "∞ Unlimited"], ["1d", "1 day"], ["1w", "1 week"],
+      ["1mo", "1 month"], ["3mo", "3 months"], ["6mo", "6 months"], ["1y", "1 year"],
+    ];
+
+    function fmtExpiry(u) {
+      if (u.role === "admin") return '<span class="muted">∞ admin</span>';
+      if (!u.expires_at) return '<span class="muted">∞ unlimited</span>';
+      const exp = new Date(u.expires_at), now = new Date();
+      const d = exp.toISOString().slice(0, 10);
+      if (exp < now) return `<span style="color:var(--red,#e5534b)">expired ${d}</span>`;
+      const days = Math.ceil((exp - now) / 86400000);
+      return `<span title="${exp.toLocaleString()}">until ${d} <span class="muted">(${days}d)</span></span>`;
+    }
+
+    function renderUsers() {
+      const tb = document.getElementById("userRows");
+      tb.innerHTML = "";
+      for (const u of users) {
+        // Primary admin account is protected: cannot be demoted or deleted from
+        // the UI (prevents accidentally locking yourself out).
+        const protectedAcct = !!u.protected;
+        const isAdminRow = u.role === "admin";
+        const durOpts = DURATION_OPTS.map(([v, l]) => `<option value="${v}">${l}</option>`).join("");
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td><strong>${u.username}</strong>${protectedAcct ? ' <span class="muted" style="font-size:10px">(protected)</span>' : ''}</td>
+          <td><span class="status ${isAdminRow ? 'running' : ''}">${u.role}</span></td>
+          <td>
+            <div style="font-size:11px; margin-bottom:4px">${fmtExpiry(u)}</div>
+            <select data-dur ${isAdminRow ? 'disabled title="admins are always unlimited"' : ''} style="font-size:11px">
+              <option value="" selected disabled>set duration…</option>
+              ${durOpts}
+            </select>
+          </td>
+          <td style="font-size:11px">
+            <label style="display:block"><input type="checkbox" data-start ${u.can_start ? "checked" : ""} ${isAdminRow ? "disabled" : ""}/> start</label>
+            <label style="display:block"><input type="checkbox" data-stop ${u.can_stop ? "checked" : ""} ${isAdminRow ? "disabled" : ""}/> stop</label>
+          </td>
+          <td class="row">
+            <button data-pw>Reset PW</button>
+            <button data-role ${protectedAcct ? 'disabled title="Protected account — role locked"' : ''}>Toggle Role</button>
+            <button class="danger" data-del ${protectedAcct ? 'disabled title="Protected account"' : ''}>Delete</button>
+          </td>`;
+        tr.querySelector("[data-pw]").onclick = async () => {
+          const p = prompt(`New password for ${u.username}:`);
+          if (p) { await apiJSON(`/api/admin/users/${u.id}`, "PATCH", { password: p }); alert("updated"); }
+        };
+        if (!isAdminRow) {
+          tr.querySelector("[data-dur]").onchange = async (e) => {
+            const v = e.target.value; if (!v) return;
+            await apiJSON(`/api/admin/users/${u.id}`, "PATCH", { duration: v });
+            await refresh();
+          };
+          tr.querySelector("[data-start]").onchange = async (e) => {
+            await apiJSON(`/api/admin/users/${u.id}`, "PATCH", { can_start: e.target.checked });
+          };
+          tr.querySelector("[data-stop]").onchange = async (e) => {
+            await apiJSON(`/api/admin/users/${u.id}`, "PATCH", { can_stop: e.target.checked });
+          };
+        }
+        if (!protectedAcct) {
+          tr.querySelector("[data-role]").onclick = async () => {
+            await apiJSON(`/api/admin/users/${u.id}`, "PATCH", { role: u.role === "admin" ? "user" : "admin" });
+            await refresh();
+          };
+          tr.querySelector("[data-del]").onclick = async () => {
+            if (!confirm(`Delete user ${u.username}?`)) return;
+            try { await api(`/api/admin/users/${u.id}`, { method: "DELETE" }); } catch (e) { alert(e.message); }
+            await refresh();
+          };
+        }
+        tb.appendChild(tr);
+      }
+    }
+
+    document.getElementById("createVm").onclick = async () => {
+      const err = document.getElementById("vmErr"); err.textContent = "";
+      try {
+        await apiJSON("/api/admin/vms", "POST", {
+          name: document.getElementById("vmName").value,
+          cpu: +document.getElementById("vmCpu").value,
+          mem_mb: +document.getElementById("vmMem").value,
+          ios_version: document.getElementById("vmIos").value,
+        });
+        document.getElementById("vmName").value = "";
+        await refresh();
+      } catch (e) { err.textContent = e.message; }
+    };
+
+    document.getElementById("createUser").onclick = async () => {
+      const err = document.getElementById("uErr"); err.textContent = "";
+      try {
+        await apiJSON("/api/admin/users", "POST", {
+          username: document.getElementById("uName").value,
+          password: document.getElementById("uPass").value,
+          role: document.getElementById("uRole").value,
+          duration: document.getElementById("uDuration").value,
+          can_start: document.getElementById("uCanStart").checked,
+          can_stop: document.getElementById("uCanStop").checked,
+        });
+        document.getElementById("uName").value = "";
+        document.getElementById("uPass").value = "";
+        document.getElementById("uCanStart").checked = false;
+        document.getElementById("uCanStop").checked = false;
+        await refresh();
+      } catch (e) { err.textContent = e.message; }
+    };
+
+    async function loadIosVersions() {
+      const sel = document.getElementById("vmIos");
+      try {
+        const r = await api("/api/admin/ios-versions");
+        sel.innerHTML = "";
+        const versions = (r.versions && r.versions.length) ? r.versions : ["26.1"];
+        for (const v of versions) {
+          const o = document.createElement("option");
+          o.value = v; o.textContent = "iOS " + v;
+          if (v === r.default) o.selected = true;
+          sel.appendChild(o);
+        }
+      } catch (e) {
+        sel.innerHTML = '<option value="26.1">iOS 26.1</option>';
+      }
+    }
+
+    (async () => {
+      const me = await loadMe();
+      buildShell(me);
+      if (me.role !== "admin") { location.href = "/"; return; }
+      await loadIosVersions();
+      await refresh();
+      setInterval(refresh, 8000);
+    })();
+  </script>
+</body>
+</html>

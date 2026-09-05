@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>vphone — login</title>
+  <link rel="stylesheet" href="/static/style.css?v=20260625a" />
+</head>
+<body>
+  <div class="login-wrap">
+    <form class="login-box card" id="loginForm">
+      <h1>VPHONE</h1>
+      <div class="field">
+        <label for="username">Username</label>
+        <input id="username" name="username" autocomplete="username" autofocus />
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" />
+      </div>
+      <div class="row" style="margin-top:8px">
+        <button class="primary" type="submit" style="flex:1; padding:10px">Sign In</button>
+      </div>
+      <div id="err" class="err" style="margin-top:10px; text-align:center; font-size:12px"></div>
+    </form>
+  </div>
+  <script src="/static/app.js?v=20260625a"></script>
+  <script>
+    document.getElementById("loginForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const err = document.getElementById("err");
+      err.textContent = "";
+      const data = new FormData();
+      data.append("username", document.getElementById("username").value);
+      data.append("password", document.getElementById("password").value);
+      try {
+        const res = await fetch("/api/login", { method: "POST", body: data, credentials: "same-origin" });
+        if (!res.ok) {
+          const j = await res.json().catch(() => ({}));
+          throw new Error(j.detail || "login failed");
+        }
+        location.href = "/";
+      } catch (ex) {
+        err.textContent = ex.message;
+      }
+    });
+  </script>
+</body>
+</html>

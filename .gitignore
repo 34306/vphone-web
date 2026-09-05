@@ -1,0 +1,39 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# --- Web platform runtime state (NEVER commit: contains users, sessions, secrets) ---
+web/data/
+*.db
+*.sqlite
+secret.key*
+*.log
+
+# --- VM images & per-VM state (huge; each user builds/creates their own) ---
+vm/
+vm-*/
+vms/
+*.img
+*.ipsw
+*.tar
+*.tar.gz
+*.tar.zst
+.vphoned.signed
+
+# --- Local env / secrets ---
+.env
+.env.local
+*.pem
+kcpassword
+
+# --- Cloudflare tunnel credentials (never commit) ---
+.cloudflared/
+*.cloudflared.json
+
+# --- macOS / editors ---
+.DS_Store
+.idea/
+.vscode/
